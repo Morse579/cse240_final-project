@@ -15,9 +15,13 @@
 //
 // Student Information
 //
-extern const char *studentName;
-extern const char *studentID;
-extern const char *email;
+extern const char *studentName1;
+extern const char *studentID1;
+extern const char *email1;
+
+extern const char *studentName2;
+extern const char *studentID2;
+extern const char *email2;
 
 //------------------------------------//
 //      Global Predictor Defines      //
@@ -54,17 +58,26 @@ extern int verbose;
 // Initialize the predictor
 //
 void init_predictor();
+void init_predictor_gshare();
+void init_predictor_tournament();
+void init_predictor_custom();
 
 // Make a prediction for conditional branch instruction at PC 'pc'
 // Returning TAKEN indicates a prediction of taken; returning NOTTAKEN
 // indicates a prediction of not taken
 //
 uint8_t make_prediction(uint32_t pc);
+uint8_t make_prediction_gshare(uint32_t pc);
+uint8_t make_prediction_tournament(uint32_t pc);
+uint8_t make_prediction_custom(uint32_t pc);
 
 // Train the predictor the last executed branch at PC 'pc' and with
 // outcome 'outcome' (true indicates that the branch was taken, false
 // indicates that the branch was not taken)
 //
 void train_predictor(uint32_t pc, uint8_t outcome);
+void train_predictor_gshare(uint32_t pc, uint8_t outcome);
+void train_predictor_tournament(uint32_t pc, uint8_t outcome);
+void train_predictor_custom(uint32_t pc, uint8_t outcome);
 
 #endif

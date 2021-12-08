@@ -11,9 +11,13 @@
 //
 // TODO:Student Information
 //
-const char *studentName = "NAME";
-const char *studentID   = "PID";
-const char *email       = "EMAIL";
+const char *studentName1 = "Yiran Chen";
+const char *studentID1   = "A13722673";
+const char *email1       = "yic328@ucsd.edu";
+
+const char *studentName2 = "Yushan Liu";
+const char *studentID2   = "PID";
+const char *email2       = "EMAIL";
 
 //------------------------------------//
 //      Predictor Configuration       //
@@ -37,6 +41,10 @@ int verbose;
 //TODO: Add your own Branch Predictor data structures here
 //
 
+// Data structure for gshare
+u_int32_t history;
+u_int32_t mask;
+u_int8_t* BHT_gshare;
 
 //------------------------------------//
 //        Predictor Functions         //
@@ -50,6 +58,30 @@ init_predictor()
   //
   //TODO: Initialize Branch Predictor Data Structures
   //
+  // Init a prediction based on the bpType
+  switch (bpType) {
+    case STATIC:
+      break;
+    case GSHARE:
+      init_predictor_gshare();
+      break;
+    case TOURNAMENT:
+    case CUSTOM:
+    default:
+      break;
+  }
+}
+
+void
+init_predictor_gshare()
+{
+  u_int32_t length = (1 << ghistoryBits); // 2^k
+  history = NOTTAKEN;
+  mask = length - 1; // 111111...(k times)
+  BHT_gshare = malloc(length * sizeof(u_int8_t));
+  for(u_int32_t i = 0; i < length; i++){
+    BHT_gshare[i] = WN; // every predictors initalized to be WN
+  }
 }
 
 // Make a prediction for conditional branch instruction at PC 'pc'
@@ -68,6 +100,7 @@ make_prediction(uint32_t pc)
     case STATIC:
       return TAKEN;
     case GSHARE:
+      return make_prediction_gshare(pc);
     case TOURNAMENT:
     case CUSTOM:
     default:
@@ -76,6 +109,17 @@ make_prediction(uint32_t pc)
 
   // If there is not a compatable bpType then return NOTTAKEN
   return NOTTAKEN;
+}
+
+uint8_t
+make_prediction_gshare(uint32_t pc)
+{
+  u_int8_t prediction = BHT_gshare[(pc & mask)^(history & mask)];
+  if(prediction >= WT){
+    return TAKEN;
+  } else {
+    return NOTTAKEN;
+  }
 }
 
 // Train the predictor the last executed branch at PC 'pc' and with
@@ -88,4 +132,33 @@ train_predictor(uint32_t pc, uint8_t outcome)
   //
   //TODO: Implement Predictor training
   //
+  // train a prediction based on the bpType
+  switch (bpType) {
+    case STATIC:
+      break;
+    case GSHARE:
+      train_predictor_gshare(pc, outcome);
+      break;
+    case TOURNAMENT:
+    case CUSTOM:
+    default:
+      break;
+  }
+}
+
+void train_predictor_gshare(uint32_t pc, uint8_t outcome)
+{
+  u_int32_t index = (pc & mask) ^ (history & mask);
+  u_int8_t prediction = BHT_gshare[index];
+
+  // update the global history
+  history = ((history << 1) + outcome) & mask; // avoid overflow ?
+
+  // update BHT
+  if(outcome == TAKEN && prediction != ST){
+    BHT_gshare[index]++;
+  } 
+  else if (outcome == NOTTAKEN && prediction != SN){
+    BHT_gshare[index]--;
+  }
 }
