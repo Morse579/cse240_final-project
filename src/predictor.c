@@ -65,9 +65,6 @@ uint8_t* choicePredictor;
 void
 init_predictor()
 {
-  //
-  //TODO: Initialize Branch Predictor Data Structures
-  //
   // Init a prediction based on the bpType
   switch (bpType) {
     case STATIC:
@@ -79,6 +76,8 @@ init_predictor()
       init_predictor_tournament();
       break;
     case CUSTOM:
+      init_predictor_custom();
+      break;
     default:
       break;
   }
@@ -99,7 +98,7 @@ init_predictor_gshare()
 void
 init_predictor_tournament()
 {
-  history = NOTTAKEN;
+  globalHistory = NOTTAKEN;
 
   gMask = (1 << ghistoryBits) - 1;
   gBHT = malloc((1 << ghistoryBits) * sizeof(uint8_t));
@@ -122,6 +121,35 @@ init_predictor_tournament()
   }
 }
 
+void
+init_predictor_custom()
+{
+  ghistoryBits = 13;
+  lhistoryBits = 11;
+  pcIndexBits = 11;
+    
+  globalHistory = NOTTAKEN;
+  gMask = (1 << ghistoryBits) - 1;
+  gBHT = malloc((1 << ghistoryBits) * sizeof(uint8_t));
+  choicePredictor = malloc((1 << ghistoryBits) * sizeof(uint8_t));
+  for(uint32_t i = 0; i < (1 << ghistoryBits); i++){
+    gBHT[i] = WN; // every predictors initalized to be WN
+    choicePredictor[i] = 2; // weakly select the global predictor
+  }
+
+  lMask = (1 << lhistoryBits) - 1;
+  lBHT = malloc((1 << lhistoryBits) * sizeof(uint8_t));
+  for(uint32_t i = 0; i < (1 << lhistoryBits); i++){
+    lBHT[i] = WWN; // using 3-bit predictor here
+  }
+
+  pcMask = (1 << pcIndexBits) - 1;
+  PHT = malloc((1 << pcIndexBits) * sizeof(uint32_t));
+  for(uint32_t i = 0; i < (1 << pcIndexBits); i++){
+    PHT[i] = 0;
+  }
+}
+
 // Make a prediction for conditional branch instruction at PC 'pc'
 // Returning TAKEN indicates a prediction of taken; returning NOTTAKEN
 // indicates a prediction of not taken
@@ -129,10 +157,6 @@ init_predictor_tournament()
 uint8_t
 make_prediction(uint32_t pc)
 {
-  //
-  //TODO: Implement prediction scheme
-  //
-
   // Make a prediction based on the bpType
   switch (bpType) {
     case STATIC:
@@ -142,6 +166,7 @@ make_prediction(uint32_t pc)
     case TOURNAMENT:
       return make_prediction_tournament(pc);
     case CUSTOM:
+      return make_prediction_custom(pc);
     default:
       break;
   }
@@ -182,6 +207,28 @@ make_prediction_tournament(uint32_t pc)
   return choice;
 }
 
+uint8_t
+make_prediction_custom(uint32_t pc)
+{
+  uint32_t xorGlobalIndex = (pc & pcMask) ^ (globalHistory & gMask);
+  uint8_t chooser = choicePredictor[xorGlobalIndex];
+  int choice;
+
+  // global prediction via global history
+  uint8_t globalPrediction = gBHT[xorGlobalIndex];
+
+  // local prediction via PHT and local history
+  uint32_t index = PHT[pc & pcMask];
+  uint8_t localPrediction = lBHT[index];
+
+  if(chooser >= 2){ // using global predictor
+    choice = globalPrediction >= WT ? TAKEN : NOTTAKEN;
+  } else {
+    choice = localPrediction >= WWT ? TAKEN : NOTTAKEN;
+  }
+  return choice;
+}
+
 // Train the predictor the last executed branch at PC 'pc' and with
 // outcome 'outcome' (true indicates that the branch was taken, false
 // indicates that the branch was not taken)
@@ -189,9 +236,6 @@ make_prediction_tournament(uint32_t pc)
 void
 train_predictor(uint32_t pc, uint8_t outcome)
 {
-  //
-  //TODO: Implement Predictor training
-  //
   // train a prediction based on the bpType
   switch (bpType) {
     case STATIC:
@@ -203,6 +247,8 @@ train_predictor(uint32_t pc, uint8_t outcome)
       train_predictor_tournament(pc, outcome);
       break;
     case CUSTOM:
+      train_predictor_custom(pc, outcome);
+      break;
     default:
       break;
   }
@@ -257,6 +303,48 @@ void train_predictor_tournament(uint32_t pc, uint8_t outcome)
   else{
     if(globalPrediction != SN) gBHT[globalHistory]--;
     if(localPrediction != SN) lBHT[index]--;
+  }
+
+  // update global history and local history
+  globalHistory = ((globalHistory << 1) + outcome) & gMask;
+  PHT[pc & pcMask] = ((PHT[pc & pcMask] << 1) + outcome) & pcMask;
+}
+
+void train_predictor_custom(uint32_t pc, uint8_t outcome)
+{
+  // using pc ^ global history instead of just globalHistory
+  uint32_t xorGlobalIndex = (pc & pcMask) ^ (globalHistory & gMask);
+  
+  uint8_t chooser = choicePredictor[xorGlobalIndex];
+
+  // global prediction via global history
+  uint8_t globalPrediction = gBHT[xorGlobalIndex];
+  uint8_t globalAction = globalPrediction >= WT ? TAKEN : NOTTAKEN;
+
+  // local prediction via PHT and local history
+  uint32_t index = PHT[pc & pcMask];
+  uint8_t localPrediction = lBHT[index];
+  uint8_t localAction = localPrediction >= WWT ? TAKEN : NOTTAKEN;
+
+  // update choice predictor when making different predictions
+  if(globalAction != localAction){
+    // +1/-1 to the correct predictor
+    if(globalAction == outcome && chooser != 3){
+      choicePredictor[xorGlobalIndex]++;
+    }
+    else if(localAction == outcome && chooser != 0){
+      choicePredictor[xorGlobalIndex]--;
+    }
+  }
+
+  // update BHTs
+  if(outcome == TAKEN){
+    if(globalPrediction != ST) gBHT[xorGlobalIndex]++;
+    if(localPrediction != SST) lBHT[index]++;
+  }
+  else{
+    if(globalPrediction != SN) gBHT[xorGlobalIndex]--;
+    if(localPrediction != SSN) lBHT[index]--;
   }
 
   // update global history and local history
